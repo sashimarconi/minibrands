@@ -1,0 +1,4 @@
+# HTTrack Website Copier Cookie File
+# This file format is compatible with Netscape cookies
+minibrandsttkshop.site	TRUE	/	FALSE	1999999999	__cf_bm	gJEkbtnxFsNttzsAw5_7mYvvYB9.xh6ku9wrG4FQVJc-1773774759.0908747-1.0.1.1-4ftQJ2wiE2LwMkRXXUKt0lmVE8jclLhaOb81Vfg_3dKYRZMcKK_B7.cG5HuPd.MIqyxpqlQ7QzSR7fqKBvtvYr5q082cloh.fQUgwzlZQOqNkUjnGPhTSCqwRLrDkbQk
+
