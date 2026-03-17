@@ -48,41 +48,64 @@
     const bucket = 'pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev';
     function fixUrl(url){
       if(!url) return url;
+      url = url.trim();
       if(url.startsWith('http') || url.startsWith('/')) return url;
       if(url.indexOf(bucket) !== -1) return '/' + url.replace(/^\.\.?\//, '');
       return url;
     }
     function fixElement(el){
       try{
+        if(!el || el.nodeType!==1) return;
+        // <img> src/data-src
         if(el.tagName==='IMG'){
-          const attr = el.getAttribute('src') || el.getAttribute('data-src') || '';
-          const fixed = fixUrl(attr);
-          if(fixed && el.src!==fixed) el.src = fixed;
+          const attrSrc = el.getAttribute('src');
+          const dataSrc = el.getAttribute('data-src');
+          if(attrSrc && attrSrc.indexOf(bucket)!==-1 && !attrSrc.startsWith('/')) el.src = fixUrl(attrSrc);
+          if(dataSrc && dataSrc.indexOf(bucket)!==-1 && !dataSrc.startsWith('/')) el.setAttribute('data-src', fixUrl(dataSrc));
         }
-        const s = el.getAttribute && el.getAttribute('style');
-        if(s && s.indexOf(bucket)!==-1){
-          el.style.backgroundImage = s.replace(/url\(([^)]+)\)/g, function(m,u){
-            const clean = u.replace(/^["']|["']$/g,'');
-            return 'url(' + fixUrl(clean) + ')';
-          });
-        }
-        ['data-src','data-srcset','srcset'].forEach(a=>{
+        // attributes that may hold image paths
+        ['data-src','data-srcset','srcset','src','data-background','data-image'].forEach(a=>{
           if(el.hasAttribute && el.hasAttribute(a)){
             const v = el.getAttribute(a);
-            const nv = v.split(',').map(p=>p.trim().split(' ')[0]).map(p=>fixUrl(p)).join(', ');
-            el.setAttribute(a,nv);
+            if(!v) return;
+            // replace any occurrence of the bucket path tokens
+            const nv = v.split(',').map(p=>{
+              const part = p.trim().split(' ')[0];
+              const fixed = fixUrl(part);
+              // preserve descriptor (e.g. " 2x") if present
+              const desc = p.trim().slice(part.length);
+              return fixed + desc;
+            }).join(', ');
+            if(nv !== v) el.setAttribute(a,nv);
           }
         });
-      }catch(e){}
+        // inline style background-image
+        if(el.getAttribute){
+          const s = el.getAttribute('style');
+          if(s && s.indexOf(bucket)!==-1){
+            const newStyle = s.replace(/url\(([^)]+)\)/g, function(m,u){
+              const clean = u.replace(/^["']|["']$/g,'');
+              return 'url(' + fixUrl(clean) + ')';
+            });
+            if(newStyle !== s) el.setAttribute('style', newStyle);
+          }
+        }
+      }catch(e){/* ignore */}
     }
     function walkAndFix(root){
-      root.querySelectorAll && root.querySelectorAll('img, [style], [data-src], [data-srcset], [srcset]').forEach(fixElement);
+      try{ root.querySelectorAll && root.querySelectorAll('img, [style], [data-src], [data-srcset], [srcset], [src]').forEach(fixElement); }catch(e){}
     }
+    // initial and periodic pass to catch late changes
     document.addEventListener('DOMContentLoaded', function(){ walkAndFix(document); });
+    setInterval(()=>{ walkAndFix(document); }, 2000);
+    // observe added nodes and attribute changes
     const mo = new MutationObserver(muts=>{
-      muts.forEach(m=>{ m.addedNodes && m.addedNodes.forEach(n=>{ if(n.nodeType===1) { fixElement(n); walkAndFix(n); } }); });
+      muts.forEach(m=>{
+        if(m.type === 'attributes' && m.target) fixElement(m.target);
+        m.addedNodes && m.addedNodes.forEach(n=>{ if(n.nodeType===1) { fixElement(n); walkAndFix(n); } });
+      });
     });
-    mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
+    mo.observe(document.documentElement || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src','data-src','style','srcset','data-srcset'] });
   })();
   </script>
 
