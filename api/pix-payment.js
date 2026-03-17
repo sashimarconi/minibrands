@@ -48,8 +48,17 @@ module.exports = async (req, res) => {
         body: JSON.stringify(payload)
       });
 
-      const j = await r.json().catch(()=>({ success: false, error: 'Invalid JSON from gateway' }));
-      return res.status(r.status>=200&&r.status<300?200:502).json(j);
+      // Read raw text so we can surface non-JSON responses for debugging
+      let rawText = '';
+      try { rawText = await r.text(); } catch (e) { rawText = String(e); }
+      // Try to parse JSON, otherwise return detailed debug info
+      try {
+        const j = JSON.parse(rawText);
+        return res.status(r.status>=200&&r.status<300?200:502).json(j);
+      } catch (e) {
+        console.error('GhostsPay returned non-JSON response', { status: r.status, headers: Object.fromEntries(r.headers ? r.headers.entries() : []), body: rawText });
+        return res.status(502).json({ success: false, error: 'Invalid JSON from gateway', gateway_status: r.status, gateway_body_preview: rawText && rawText.length>1000 ? rawText.slice(0,1000) + '...[truncated]' : rawText });
+      }
     }
 
     if (action === 'check_status') {

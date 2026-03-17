@@ -82,7 +82,38 @@
     try{ mo.observe(document.documentElement||document.body,{childList:true,subtree:true}); }catch(e){}
   })();
   </script>
-  <script type="module" crossorigin src="assets/index-xjfHVvbr.js"></script>
+  <script>
+  // XHR shim: redirect Supabase function calls to local /api/pix-payment
+  (function(){
+    try{
+      const SUPA_HOST = 'gjatcczlpbimqhagwtws.supabase.co';
+      const SUPA_PATH = '/functions/v1/pix-payment';
+      const origOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(method, url){
+        try{
+          if(typeof url === 'string' && url.indexOf(SUPA_HOST) !== -1 && url.indexOf(SUPA_PATH) !== -1){
+            // rewrite to local proxy
+            url = '/api/pix-payment';
+          }
+        }catch(e){}
+        return origOpen.apply(this, [method, url].concat(Array.prototype.slice.call(arguments,2)));
+      };
+    }catch(e){/* ignore */}
+  })();
+  </script>
+  <script type="module">
+  (async ()=>{
+    try{
+      const r = await fetch('assets/index-xjfHVvbr.js');
+      let js = await r.text();
+      // Replace inlined Supabase client initialization with a safe stub that forwards pix-payment
+      js = js.replace(/const\s+IP=[^;]+?ig=AP\(IP,LP,\{auth:\{storage:localStorage,persistSession:!0,autoRefreshToken:!0\}\}\);/s, `const ig={functions:{invoke:async function(name,opts){if(name==='pix-payment'){const body=opts&&opts.body?opts.body:opts;try{const res=await fetch('/api/pix-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return await res.json()}catch(e){return {error:String(e)}}}return {error:'Supabase functions disabled'}}}};`);
+      const blob = new Blob([js],{type:'text/javascript'});
+      const url = URL.createObjectURL(blob);
+      await import(url);
+    }catch(e){console.error('Failed to load patched bundle',e);}
+  })();
+  </script>
   <link rel="stylesheet" crossorigin href="assets/index-Dv3PGHDr.css">
 <script defer src="_flock.js" data-proxy-url="https://minibrandsttkshop.site/~api/analytics"></script></head>
 
