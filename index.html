@@ -104,19 +104,8 @@
     }catch(e){/* ignore */}
   })();
   </script>
-  <script type="module">
-  (async ()=>{
-    try{
-      const r = await fetch('assets/index-xjfHVvbr.js');
-      let js = await r.text();
-      // Replace inlined Supabase client initialization with a safe stub that forwards pix-payment
-      js = js.replace(/const\s+IP=[^;]+?ig=AP\(IP,LP,\{auth:\{storage:localStorage,persistSession:!0,autoRefreshToken:!0\}\}\);/s, `const ig={functions:{invoke:async function(name,opts){if(name==='pix-payment'){const body=opts&&opts.body?opts.body:opts;try{const res=await fetch('/api/pix-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j = await res.json();const out = (j && j.success && j.data) ? j.data : j;console.debug('pix-runtime-stub-out', {requestBody: body, gatewayJson: j, out});return { data: out, error: j && !j.success ? { message: j.error || 'Gateway error' } : null };}catch(e){console.error('pix-runtime-stub-error',e);return { error:String(e) }} }return { error:'Supabase functions disabled' }}};`);
-      const blob = new Blob([js],{type:'text/javascript'});
-      const url = URL.createObjectURL(blob);
-      await import(url);
-    }catch(e){console.error('Failed to load patched bundle',e);}
-  })();
-  </script>
+  <!-- Carregamento direto do bundle para restaurar a UI rapidamente -->
+  <script type="module" src="assets/index-xjfHVvbr.js"></script>
   <link rel="stylesheet" crossorigin href="assets/index-Dv3PGHDr.css">
 <script defer src="_flock.js" data-proxy-url="https://minibrandsttkshop.site/~api/analytics"></script></head>
 
