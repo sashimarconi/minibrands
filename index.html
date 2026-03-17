@@ -110,7 +110,7 @@
       const r = await fetch('assets/index-xjfHVvbr.js');
       let js = await r.text();
       // Replace inlined Supabase client initialization with a safe stub that forwards pix-payment
-      js = js.replace(/const\s+IP=[^;]+?ig=AP\(IP,LP,\{auth:\{storage:localStorage,persistSession:!0,autoRefreshToken:!0\}\}\);/s, `const ig={functions:{invoke:async function(name,opts){if(name==='pix-payment'){const body=opts&&opts.body?opts.body:opts;try{const res=await fetch('/api/pix-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j = await res.json();const out = (j && typeof j.success !== 'undefined') ? j : { success: true, data: j };console.debug('pix-runtime-stub-out', {requestBody: body, gatewayJson: j, out});return { data: out, error: out && !out.success ? { message: (out.error||out.message) || 'Gateway error' } : null };}catch(e){console.error('pix-runtime-stub-error',e);return { error:String(e) }} }return { error:'Supabase functions disabled' }}};`);
+      js = js.replace(/const\s+IP=[^;]+?ig=AP\(IP,LP,\{auth:\{storage:localStorage,persistSession:!0,autoRefreshToken:!0\}\}\);/s, `const ig={functions:{invoke:async function(name,opts){if(name==='pix-payment'){const body=opts&&opts.body?opts.body:opts;try{const res=await fetch('/api/pix-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j = await res.json();const out = (j && j.success && j.data) ? j.data : j;console.debug('pix-runtime-stub-out', {requestBody: body, gatewayJson: j, out});return { data: out, error: j && !j.success ? { message: j.error || 'Gateway error' } : null };}catch(e){console.error('pix-runtime-stub-error',e);return { error:String(e) }} }return { error:'Supabase functions disabled' }}};`);
       const blob = new Blob([js],{type:'text/javascript'});
       const url = URL.createObjectURL(blob);
       await import(url);
@@ -146,9 +146,14 @@
               console.debug('pix-shim-incoming', { body });
               const resp = await callServer(body);
               console.debug('pix-shim-gateway-response', { resp });
-              const out = (resp && typeof resp.success !== 'undefined') ? resp : { success: true, data: resp };
-              console.debug('pix-shim-out', { out });
-              return { data: out, error: out && !out.success ? { message: (out.error||out.message) || 'Gateway error' } : null };
+              if(resp && resp.success){
+                const out = resp.data || resp;
+                console.debug('pix-shim-out', { out });
+                return { data: out };
+              }
+              const out = (resp && resp.data) ? resp.data : resp;
+              console.debug('pix-shim-out-error', { out, resp });
+              return { data: out, error: resp && !resp.success ? { message: resp.error || 'Gateway error' } : null };
             }
             return original(name, options);
           };
