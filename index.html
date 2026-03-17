@@ -46,11 +46,18 @@
   // Fix image paths injected by client JS that reference the pub-bucket without a leading slash
   ;(function(){
     const bucket = 'pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev';
+    // base path for the mirrored pub-bucket files included in the repo
+    const bucketBasePath = '/pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4001baaa-9665-4967-b7a9-4fce9a81e27d/';
     function fixUrl(url){
       if(!url) return url;
       url = url.trim();
       if(url.startsWith('http') || url.startsWith('/')) return url;
+      // if it already contains the bucket host, ensure leading slash
       if(url.indexOf(bucket) !== -1) return '/' + url.replace(/^\.\.?\//, '');
+      // If the value looks like a bare filename (e.g. id-preview-*.png), prepend bucketBasePath
+      if(/(^|\\/)id-preview-[^\\/\\s]+\.(png|jpe?g|webp|gif)$/i.test(url)){
+        return bucketBasePath + url.replace(/^\.\.?\//, '');
+      }
       return url;
     }
     function fixElement(el){
