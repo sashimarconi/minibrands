@@ -107,7 +107,10 @@ module.exports = async (req, res) => {
             // Try parse
             try {
               const j = JSON.parse(rawText);
-              return res.status(r.status>=200&&r.status<300?200:502).json(j);
+              if (r.status >= 200 && r.status < 300) {
+                return res.status(200).json({ success: true, data: j });
+              }
+              return res.status(502).json({ success: false, error: 'Gateway error', gateway_status: r.status, data: j });
             } catch (e) {
               attempts.push({ endpoint, headerNames: Object.keys(headers), status: r.status, body_preview: rawText && rawText.length>1000 ? rawText.slice(0,1000) + '...[truncated]' : rawText });
               // continue trying other combos
@@ -131,7 +134,10 @@ module.exports = async (req, res) => {
       console.log('GhostsPay status check', { url, tx });
       const r = await fetch(url, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
       const j = await r.json().catch(()=>({ success:false, error:'Invalid JSON from gateway' }));
-      return res.status(r.status>=200&&r.status<300?200:502).json(j);
+      if (r.status >= 200 && r.status < 300) {
+        return res.status(200).json({ success: true, data: j });
+      }
+      return res.status(502).json({ success: false, error: 'Gateway error', gateway_status: r.status, data: j });
     }
 
     return res.status(400).json({ success: false, error: 'Unknown action' });
