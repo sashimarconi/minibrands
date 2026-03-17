@@ -132,11 +132,16 @@ module.exports = async (req, res) => {
                     // If still not found, try to extract an embedded JSON blob (e.g. '{"success":true,...}')
                     if (!innerId) {
                       const extractJSON = (s) => {
-                        const key = '"success"';
-                        const idx = s.indexOf(key);
-                        if (idx === -1) return null;
+                        if (!s || typeof s !== 'string') return null;
+                        const keyCandidates = ['"success"', '"message"', '"data"'];
+                        let keyIdx = -1;
+                        for (const k of keyCandidates) {
+                          keyIdx = s.indexOf(k);
+                          if (keyIdx !== -1) break;
+                        }
+                        if (keyIdx === -1) return null;
                         // find opening brace before the key
-                        const openIdx = s.lastIndexOf('{', idx);
+                        const openIdx = s.lastIndexOf('{', keyIdx);
                         if (openIdx === -1) return null;
                         // scan forward to find matching closing brace
                         let depth = 0;
@@ -145,8 +150,20 @@ module.exports = async (req, res) => {
                           else if (s[i] === '}') {
                             depth--;
                             if (depth === 0) {
-                              const candidate = s.slice(openIdx, i + 1);
-                              try { return JSON.parse(candidate); } catch (e) { return null; }
+                              let candidate = s.slice(openIdx, i + 1);
+                              // try parsing candidate directly
+                              try { return JSON.parse(candidate); } catch (e) {}
+                              // try removing escaped quotes (\")
+                              try {
+                                const unescaped = candidate.replace(/\\\"/g,'"').replace(/\\n/g,'');
+                                return JSON.parse(unescaped);
+                              } catch (e) {}
+                              // try removing backslashes entirely
+                              try {
+                                const stripped = candidate.replace(/\\/g,'');
+                                return JSON.parse(stripped);
+                              } catch (e) {}
+                              return null;
                             }
                           }
                         }
