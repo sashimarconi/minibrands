@@ -128,7 +128,39 @@ module.exports = async (req, res) => {
                     // try direct id field first
                     const m1 = hay.match(/\"id\"\s*:\s*\"([0-9a-fA-F-]{36})\"/);
                     if (m1) innerId = m1[1];
-                    // if not found, collect all UUID-like candidates and try them
+
+                    // If still not found, try to extract an embedded JSON blob (e.g. '{"success":true,...}')
+                    if (!innerId) {
+                      const extractJSON = (s) => {
+                        const key = '"success"';
+                        const idx = s.indexOf(key);
+                        if (idx === -1) return null;
+                        // find opening brace before the key
+                        const openIdx = s.lastIndexOf('{', idx);
+                        if (openIdx === -1) return null;
+                        // scan forward to find matching closing brace
+                        let depth = 0;
+                        for (let i = openIdx; i < s.length; i++) {
+                          if (s[i] === '{') depth++;
+                          else if (s[i] === '}') {
+                            depth--;
+                            if (depth === 0) {
+                              const candidate = s.slice(openIdx, i + 1);
+                              try { return JSON.parse(candidate); } catch (e) { return null; }
+                            }
+                          }
+                        }
+                        return null;
+                      };
+
+                      const parsedInner = extractJSON(hay) || extractJSON(rawText || '');
+                      if (parsedInner) {
+                        const maybeId = (parsedInner && parsedInner.data && (parsedInner.data.id || (parsedInner.data.data && parsedInner.data.data.id))) || (parsedInner && parsedInner.id);
+                        if (maybeId) innerId = maybeId;
+                      }
+                    }
+
+                    // if still not found, collect all UUID-like candidates and try them
                     if (!innerId) {
                       const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
                       const found = hay.match(uuidRe) || [];
