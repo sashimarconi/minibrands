@@ -25,6 +25,7 @@ module.exports = async (req, res) => {
       value = Number(value) || 0;
       if (value > 1000) value = value / 100; // likely cents -> reais
 
+      // Build payload with sanitization: omit null/invalid fields and ensure product values >= 0.01
       const payload = {
         client_name: body.name || body.client_name || '',
         client_email: body.email || body.client_email || '',
@@ -32,11 +33,50 @@ module.exports = async (req, res) => {
         client_mobile_phone: (body.phone || body.client_mobile_phone || '').toString().replace(/\D+/g, ''),
         value: Number(value.toFixed(2)),
         gateway_account_id: Number(body.gateway_account_id || GATEWAY_ACCOUNT_ID),
-        external_ref: body.external_ref || body.description || null,
-        post_back_url: process.env.GHOSTSPAYS_POSTBACK_URL || null,
-        provider: body.provider || null,
-        products: Array.isArray(body.items) ? body.items.map(it=>({ product_name: it.name||it.product_name||'', quantity: Number(it.quantity||1), value: Number(((it.price||0)>1000? (it.price/100) : (it.price||0)).toFixed(2)) })) : undefined
+        external_ref: body.external_ref || body.description || undefined
       };
+
+      // post_back_url: only include if it's a valid URL
+      const envPostback = process.env.GHOSTSPAYS_POSTBACK_URL;
+      const candidatePostback = body.post_back_url || envPostback;
+      if (typeof candidatePostback === 'string' && candidatePostback.trim()) {
+        try {
+          // validate URL
+          new URL(candidatePostback);
+          payload.post_back_url = candidatePostback;
+        } catch (e) {
+          // invalid URL - omit
+          console.log('Skipping invalid post_back_url', candidatePostback);
+        }
+      }
+
+      // provider: include only when it's a non-empty string
+      if (typeof body.provider === 'string' && body.provider.trim()) {
+        payload.provider = body.provider.trim();
+      }
+
+      // Products: prefer `body.products`, fallback to `body.items`.
+      const rawProducts = Array.isArray(body.products) ? body.products : (Array.isArray(body.items) ? body.items : undefined);
+      if (Array.isArray(rawProducts) && rawProducts.length) {
+        const totalQty = rawProducts.reduce((s,it)=>s + (Number(it.quantity)||1), 0) || 1;
+        const mapped = rawProducts.map(it => {
+          const qty = Number(it.quantity) || 1;
+          let rawPrice = (it.price !== undefined ? it.price : (it.value !== undefined ? it.value : 0));
+          rawPrice = Number(rawPrice) || 0;
+          // Heuristic: if rawPrice is likely cents (>1000), convert to reais
+          if (rawPrice > 1000) rawPrice = rawPrice / 100;
+          // If price is zero, fallback to proportional share of payload.value
+          if (rawPrice <= 0) rawPrice = Number((payload.value / totalQty).toFixed(2)) || 0.01;
+          const valuePerItem = Math.max(Number(rawPrice.toFixed(2)), 0.01);
+          return {
+            product_name: (it.name || it.product_name || payload.external_ref || 'Product') || 'Product',
+            quantity: qty,
+            value: Number(valuePerItem.toFixed(2))
+          };
+        }).filter(p => Number(p.value) >= 0.01);
+
+        if (mapped.length) payload.products = mapped;
+      }
 
       const GHOSTSPAYS_API_URL = (process.env.GHOSTSPAYS_API_URL || 'https://api.ghostspaysv1.com').replace(/\/$/, '');
 
