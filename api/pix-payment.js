@@ -33,8 +33,18 @@ module.exports = async (req, res) => {
         client_mobile_phone: (body.phone || body.client_mobile_phone || '').toString().replace(/\D+/g, ''),
         value: Number(value.toFixed(2)),
         gateway_account_id: Number(body.gateway_account_id || GATEWAY_ACCOUNT_ID),
-        external_ref: body.external_ref || body.description || undefined
+        // ensure external_ref is unique per attempt to avoid duplicate key errors
+        external_ref: undefined
       };
+
+      // Build a safe, unique external_ref: prefer provided value but append a short nonce
+      const providedRef = body.external_ref || body.description;
+      if (typeof providedRef === 'string' && providedRef.trim()) {
+        const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
+        payload.external_ref = `${providedRef.trim()}-${nonce}`;
+      } else {
+        payload.external_ref = `order-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
+      }
 
       // post_back_url: only include if it's a valid URL
       const envPostback = process.env.GHOSTSPAYS_POSTBACK_URL;
