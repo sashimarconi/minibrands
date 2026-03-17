@@ -64,9 +64,12 @@
         const orig = obj.invoke;
         Object.defineProperty(obj,'invoke',{configurable:true,enumerable:true,writable:true,value:function(name,options){
           if(name==='pix-payment'){
-            const body = options && options.body ? options.body : {};
-            return callServer(body).then(j=>({data:j, error:j && !j.success ? {message:j.error||'Gateway error'} : null}));
-          }
+              const body = options && options.body ? options.body : {};
+              return callServer(body).then(j=>{
+                const out = (j && j.success && j.data) ? j.data : j;
+                return { data: out, error: j && !j.success ? { message: j.error || 'Gateway error' } : null };
+              });
+            }
           return typeof orig==='function'? orig.apply(this,arguments) : Promise.reject(new Error('no invoke'));
         }});
       }catch(e){/* ignore */}
@@ -141,8 +144,8 @@
             if(name === 'pix-payment'){
               const body = options && options.body ? options.body : {};
               const resp = await callServer(body);
-              if(resp && resp.success) return { data: resp };
-              return { data: resp, error: resp && !resp.success ? { message: resp.error || 'Gateway error' } : null };
+              if(resp && resp.success) return { data: resp.data || resp };
+              return { data: (resp && resp.data) ? resp.data : resp, error: resp && !resp.success ? { message: resp.error || 'Gateway error' } : null };
             }
             return original(name, options);
           };
