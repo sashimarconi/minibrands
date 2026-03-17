@@ -35,35 +35,6 @@
   <meta name="twitter:title" content="Mini Brands">
   <meta property="og:description" content="Lovable Generated Project">
   <meta name="twitter:description" content="Lovable Generated Project">
-  <script>
-  // Early interceptor (pre-bundle) to force pix-payment calls to our /api/pix-payment
-  (function(){
-    const callServer = (body)=>fetch('/api/pix-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(e=>({success:false,error:String(e)}));
-
-    function wrapInvoke(obj){
-      if(!obj) return;
-      try{
-        const orig = obj.invoke;
-        Object.defineProperty(obj,'invoke',{configurable:true,enumerable:true,writable:true,value:function(name,options){
-          if(name==='pix-payment'){
-            const body = options && options.body ? options.body : {};
-            return callServer(body).then(j=>({data:j, error:j && !j.success ? {message:j.error||'Gateway error'} : null}));
-          }
-          return typeof orig==='function'? orig.apply(this,arguments) : Promise.reject(new Error('no invoke'));
-        }});
-      }catch(e){/* ignore */}
-    }
-
-    // Ensure ig and ig.functions exist and wrap
-    try{ window.ig = window.ig || {}; window.ig.functions = window.ig.functions || {}; wrapInvoke(window.ig.functions); }catch(e){}
-
-    // Observe reassignment of ig or its functions and re-wrap
-    const poll = setInterval(()=>{ try{ if(window.ig && window.ig.functions) wrapInvoke(window.ig.functions); }catch(e){} },200);
-    // Also watch DOM in case scripts replace global via document writes
-    const mo = new MutationObserver(()=>{ try{ if(window.ig && window.ig.functions) wrapInvoke(window.ig.functions); }catch(e){} });
-    try{ mo.observe(document.documentElement||document.body,{childList:true,subtree:true}); }catch(e){}
-  })();
-  </script>
   <script type="module" crossorigin src="assets/index-xjfHVvbr.js"></script>
   <link rel="stylesheet" crossorigin href="assets/index-Dv3PGHDr.css">
 <script defer src="_flock.js" data-proxy-url="https://minibrandsttkshop.site/~api/analytics"></script></head>
@@ -72,37 +43,6 @@
     <div id="root"></div>
   
   <script>
-  // Shim: intercept calls to Supabase function 'pix-payment' and route to our serverless endpoint
-  (function(){
-    async function callServer(body){
-      try{
-        const res = await fetch('/api/pix-payment',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify(body)
-        });
-        return await res.json();
-      }catch(e){ console.error('pix shim fetch error',e); return { success:false, error:String(e) } }
-    }
-    function patch(){
-      try{
-        if(window.ig && window.ig.functions && typeof window.ig.functions.invoke === 'function'){
-          const original = window.ig.functions.invoke.bind(window.ig.functions);
-          window.ig.functions.invoke = async function(name, options){
-            if(name === 'pix-payment'){
-              const body = options && options.body ? options.body : {};
-              const resp = await callServer(body);
-              if(resp && resp.success) return { data: resp };
-              return { data: resp, error: resp && !resp.success ? { message: resp.error || 'Gateway error' } : null };
-            }
-            return original(name, options);
-          };
-          console.info('pix-payment shim applied');
-        }
-      }catch(e){ console.error('pix shim patch error',e) }
-    }
-    (function wait(){ if(window.ig && window.ig.functions && window.ig.functions.invoke) return patch(); setTimeout(wait,200); })();
-  })();
   // Fix image paths injected by client JS that reference the pub-bucket without a leading slash
   ;(function(){
     const bucket = 'pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev';
