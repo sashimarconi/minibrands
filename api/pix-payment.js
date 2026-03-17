@@ -39,30 +39,48 @@ module.exports = async (req, res) => {
       };
 
       const GHOSTSPAYS_API_URL = (process.env.GHOSTSPAYS_API_URL || 'https://api.ghostspaysv1.com').replace(/\/$/, '');
-      const endpoint = `${GHOSTSPAYS_API_URL}/api/pix/generate-transaction`;
-      console.log('GhostsPay request', { endpoint, payload });
 
-      const r = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Secret-Key': GHOST_SECRET,
-          'X-Public-Key': GHOST_PUBLIC
-        },
-        body: JSON.stringify(payload)
-      });
+      const pathCandidates = ['/api/pix/generate-transaction', '/api/generate-transaction'];
+      const headerVariants = [
+        { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC },
+        { 'secret_key': GHOST_SECRET, 'api_key': GHOST_PUBLIC },
+        { 'api_key': GHOST_PUBLIC, 'secret_key': GHOST_SECRET }
+      ];
 
-      // Read raw text so we can surface non-JSON responses for debugging
-      let rawText = '';
-      try { rawText = await r.text(); } catch (e) { rawText = String(e); }
-      // Try to parse JSON, otherwise return detailed debug info
-      try {
-        const j = JSON.parse(rawText);
-        return res.status(r.status>=200&&r.status<300?200:502).json(j);
-      } catch (e) {
-        console.error('GhostsPay returned non-JSON response', { status: r.status, headers: Object.fromEntries(r.headers ? r.headers.entries() : []), body: rawText });
-        return res.status(502).json({ success: false, error: 'Invalid JSON from gateway', gateway_status: r.status, gateway_body_preview: rawText && rawText.length>1000 ? rawText.slice(0,1000) + '...[truncated]' : rawText });
+      const attempts = [];
+      let lastResponseText = '';
+      for (const path of pathCandidates) {
+        for (const headers of headerVariants) {
+          const endpoint = `${GHOSTSPAYS_API_URL}${path}`;
+          console.log('GhostsPay try', { endpoint, headerNames: Object.keys(headers) });
+          try {
+            const r = await fetch(endpoint, {
+              method: 'POST',
+              headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+              body: JSON.stringify(payload)
+            });
+
+            let rawText = '';
+            try { rawText = await r.text(); } catch (e) { rawText = String(e); }
+            lastResponseText = rawText;
+
+            // Try parse
+            try {
+              const j = JSON.parse(rawText);
+              return res.status(r.status>=200&&r.status<300?200:502).json(j);
+            } catch (e) {
+              attempts.push({ endpoint, headerNames: Object.keys(headers), status: r.status, body_preview: rawText && rawText.length>1000 ? rawText.slice(0,1000) + '...[truncated]' : rawText });
+              // continue trying other combos
+            }
+          } catch (err) {
+            attempts.push({ endpoint, headerNames: Object.keys(headers), error: String(err) });
+          }
+        }
       }
+
+      console.error('GhostsPay all attempts failed', { attempts });
+      // Return last text preview plus the attempts to aid debugging (no secret values)
+      return res.status(502).json({ success: false, error: 'Invalid JSON from gateway', gateway_status: attempts.length ? (attempts[attempts.length-1].status||0) : 0, gateway_body_preview: lastResponseText && lastResponseText.length>1000 ? lastResponseText.slice(0,1000) + '...[truncated]' : lastResponseText, attempts });
     }
 
     if (action === 'check_status') {
