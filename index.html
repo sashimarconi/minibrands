@@ -38,6 +38,24 @@
   <script>
   // Early interceptor (pre-bundle) to force pix-payment calls to our /api/pix-payment
   (function(){
+    // Rewrite direct fetch requests to the Supabase functions endpoint for pix-payment
+    try{
+      const _origFetch = window.fetch;
+      const SUPA_HOST = 'gjatcczlpbimqhagwtws.supabase.co';
+      const SUPA_PATH = '/functions/v1/pix-payment';
+      window.fetch = function(input, init){
+        try{
+          let url = typeof input === 'string' ? input : (input && input.url) ? input.url : '';
+          if(url && url.indexOf(SUPA_HOST) !== -1 && url.indexOf(SUPA_PATH) !== -1){
+            // forward body (try to parse if string)
+            let body = init && init.body ? init.body : null;
+            try{ if(typeof body === 'string') body = JSON.parse(body); }catch(e){}
+            return _origFetch('/api/pix-payment', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          }
+        }catch(e){ /* fallthrough to original fetch */ }
+        return _origFetch.apply(this, arguments);
+      };
+    }catch(e){}
     const callServer = (body)=>fetch('/api/pix-payment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(e=>({success:false,error:String(e)}));
 
     function wrapInvoke(obj){
