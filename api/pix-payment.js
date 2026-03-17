@@ -116,7 +116,22 @@ module.exports = async (req, res) => {
               // the created transaction id inside the response payload (j.data.id).
               // In that case, fetch the transaction by id and return it as success.
               try {
-                const innerId = j && j.data && (j.data.id || (j.data.data && j.data.data.id));
+                let innerId = null;
+                // direct paths
+                if (j && j.data && (j.data.id || (j.data.data && j.data.data.id))) {
+                  innerId = j.data.id || (j.data.data && j.data.data.id);
+                }
+                // search JSON string for an UUID if not found
+                if (!innerId) {
+                  try {
+                    const hay = JSON.stringify(j || {}) + ' ' + (rawText || '');
+                    const m = hay.match(/"id"\s*:\s*"([0-9a-fA-F-]{36})"/) || hay.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+                    if (m) innerId = m[1];
+                  } catch (e) {
+                    // ignore
+                  }
+                }
+
                 if (innerId) {
                   console.log('Detected duplicate external_ref, fetching existing transaction', innerId);
                   const statusUrl = `${GHOSTSPAYS_API_URL}/api/transaction/${encodeURIComponent(innerId)}`;
