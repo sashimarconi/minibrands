@@ -38,7 +38,11 @@ module.exports = async (req, res) => {
         products: Array.isArray(body.items) ? body.items.map(it=>({ product_name: it.name||it.product_name||'', quantity: Number(it.quantity||1), value: Number(((it.price||0)>1000? (it.price/100) : (it.price||0)).toFixed(2)) })) : undefined
       };
 
-      const r = await fetch('https://api.ghostspaysv1.com/api/pix/generate-transaction', {
+      const GHOSTSPAYS_API_URL = (process.env.GHOSTSPAYS_API_URL || 'https://api.ghostspaysv1.com').replace(/\/$/, '');
+      const endpoint = `${GHOSTSPAYS_API_URL}/api/pix/generate-transaction`;
+      console.log('GhostsPay request', { endpoint, payload });
+
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -64,7 +68,9 @@ module.exports = async (req, res) => {
     if (action === 'check_status') {
       const tx = body.transaction_id || body.id || body.txn_id;
       if (!tx) return res.status(400).json({ success: false, error: 'transaction_id required' });
-      const url = `https://api.ghostspaysv1.com/api/transaction/${encodeURIComponent(tx)}`;
+      const GHOSTSPAYS_API_URL = (process.env.GHOSTSPAYS_API_URL || 'https://api.ghostspaysv1.com').replace(/\/$/, '');
+      const url = `${GHOSTSPAYS_API_URL}/api/transaction/${encodeURIComponent(tx)}`;
+      console.log('GhostsPay status check', { url, tx });
       const r = await fetch(url, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
       const j = await r.json().catch(()=>({ success:false, error:'Invalid JSON from gateway' }));
       return res.status(r.status>=200&&r.status<300?200:502).json(j);
