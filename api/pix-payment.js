@@ -110,6 +110,26 @@ module.exports = async (req, res) => {
               if (r.status >= 200 && r.status < 300) {
                 return res.status(200).json({ success: true, data: j });
               }
+
+              // Handle duplicate external_ref: if gateway created the transaction but
+              // internal DB raised duplicate key, GhostsPay may return 500 but include
+              // the created transaction id inside the response payload (j.data.id).
+              // In that case, fetch the transaction by id and return it as success.
+              try {
+                const innerId = j && j.data && (j.data.id || (j.data.data && j.data.data.id));
+                if (innerId) {
+                  console.log('Detected duplicate external_ref, fetching existing transaction', innerId);
+                  const statusUrl = `${GHOSTSPAYS_API_URL}/api/transaction/${encodeURIComponent(innerId)}`;
+                  const sr = await fetch(statusUrl, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
+                  const sj = await sr.json().catch(()=>null);
+                  if (sr.status >= 200 && sr.status < 300 && sj) {
+                    return res.status(200).json({ success: true, data: sj, note: 'recovered_from_duplicate' });
+                  }
+                }
+              } catch (innerErr) {
+                console.error('Error while recovering transaction after duplicate', innerErr);
+              }
+
               return res.status(502).json({ success: false, error: 'Gateway error', gateway_status: r.status, data: j });
             } catch (e) {
               attempts.push({ endpoint, headerNames: Object.keys(headers), status: r.status, body_preview: rawText && rawText.length>1000 ? rawText.slice(0,1000) + '...[truncated]' : rawText });
