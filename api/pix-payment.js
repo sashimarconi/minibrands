@@ -125,8 +125,27 @@ module.exports = async (req, res) => {
                 if (!innerId) {
                   try {
                     const hay = JSON.stringify(j || {}) + ' ' + (rawText || '');
-                    const m = hay.match(/"id"\s*:\s*"([0-9a-fA-F-]{36})"/) || hay.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-                    if (m) innerId = m[1];
+                    // try direct id field first
+                    const m1 = hay.match(/\"id\"\s*:\s*\"([0-9a-fA-F-]{36})\"/);
+                    if (m1) innerId = m1[1];
+                    // if not found, collect all UUID-like candidates and try them
+                    if (!innerId) {
+                      const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+                      const found = hay.match(uuidRe) || [];
+                      const uniques = [...new Set(found)];
+                      for (const cand of uniques) {
+                        try {
+                          const statusUrl = `${GHOSTSPAYS_API_URL}/api/transaction/${encodeURIComponent(cand)}`;
+                          const sr = await fetch(statusUrl, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
+                          if (sr.status >= 200 && sr.status < 300) {
+                            const sj = await sr.json().catch(()=>null);
+                            if (sj) return res.status(200).json({ success: true, data: sj, note: 'recovered_from_duplicate' });
+                          }
+                        } catch (e) {
+                          // ignore individual candidate errors
+                        }
+                      }
+                    }
                   } catch (e) {
                     // ignore
                   }
