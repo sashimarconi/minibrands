@@ -148,12 +148,21 @@
               // Normalize the gateway reply into the shape expected by the bundled app
               try{
                 const gateway = (resp && resp.data) ? resp.data : (resp || {});
-                const amountVal = Number(gateway.total_value ?? gateway.value ?? gateway.net_total ?? 0) || 0;
+                // Defensive amount extraction: check several likely fields and nested pix object
+                const tryNum = v => { const n = Number(v); return isNaN(n)?null:n };
+                let amountVal = tryNum(gateway.total_value ?? gateway.value ?? gateway.net_total ?? gateway.amount ?? null);
+                if (amountVal === null && gateway.pix) {
+                  amountVal = tryNum(gateway.pix.total_value ?? gateway.pix.value ?? gateway.pix.net_total ?? gateway.pix.amount ?? null);
+                }
+                if (amountVal === null && gateway.data) {
+                  amountVal = tryNum(gateway.data.total_value ?? gateway.data.value ?? gateway.data.net_total ?? gateway.data.amount ?? null);
+                }
+                if (amountVal === null) amountVal = 0;
                 const normalized = {
                   success: Boolean(resp && resp.success),
                   amount: Math.round(amountVal * 100),
-                  qr_code: (gateway.pix && (gateway.pix.code || gateway.pix.qr_code)) || gateway.qr_code || gateway.code || null,
-                  qr_code_base64: (gateway.pix && gateway.pix.qr_code_base64) || gateway.qr_code_base64 || null,
+                  qr_code: (gateway.pix && (gateway.pix.code || gateway.pix.qr_code || gateway.pix.qr_code_url)) || gateway.qr_code || gateway.code || null,
+                  qr_code_base64: (gateway.pix && (gateway.pix.qr_code_base64 || gateway.pix.code_base64)) || gateway.qr_code_base64 || null,
                   transaction_id: gateway.id || (gateway.data && gateway.data.id) || gateway.transaction_id || gateway.txn_id || null,
                   raw: gateway
                 };
