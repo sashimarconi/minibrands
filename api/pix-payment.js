@@ -96,13 +96,37 @@ module.exports = async (req, res) => {
       console.log('SpeedPag try', { endpoint });
 
       try {
+        // Build SpeedPag-specific payload: amount in cents, paymentMethod, items[], customer{}
+        const amountCents = Math.round(Number(payload.value || 0) * 100);
+        const items = (Array.isArray(payload.products) && payload.products.length) ? payload.products.map(it => ({
+          name: it.product_name || it.name || 'Product',
+          quantity: Number(it.quantity) || 1,
+          unit_price: Math.round(Number(it.value || it.price || 0) * 100)
+        })) : [{ name: payload.external_ref || 'Item', quantity: 1, unit_price: amountCents }];
+
+        const customer = {
+          name: payload.client_name || payload.client || '',
+          email: payload.client_email || payload.email || '',
+          document: payload.client_document || payload.document || '',
+          phone: payload.client_mobile_phone || payload.client_phone || payload.client_mobile || ''
+        };
+
+        const speedPayload = {
+          amount: amountCents,
+          paymentMethod: 'pix',
+          items,
+          customer,
+          externalRef: payload.external_ref,
+          postbackUrl: payload.post_back_url || payload.postbackUrl
+        };
+
         const r = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': auth
           },
-          body: JSON.stringify(Object.assign({}, payload, { paymentMethod: 'pix', amount: Math.round(Number(payload.value) * 100) }))
+          body: JSON.stringify(speedPayload)
         });
 
         const j = await r.json().catch(async () => {
