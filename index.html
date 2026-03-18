@@ -67,17 +67,25 @@
               const body = options && options.body ? options.body : {};
               return callServer(body).then(j=>{
                 // Normalize gateway response into the shape the minified bundle expects.
-                const gateway = (j && j.data) ? j.data : j || {};
-                const amountVal = Number(gateway.total_value ?? gateway.value ?? gateway.net_total ?? 0) || 0;
-                const normalized = {
-                  success: Boolean(j && j.success),
-                  amount: Math.round(amountVal * 100),
-                  qr_code: (gateway.pix && (gateway.pix.code || gateway.pix.qr_code)) || gateway.qr_code || gateway.code || null,
-                  qr_code_base64: (gateway.pix && gateway.pix.qr_code_base64) || gateway.qr_code_base64 || null,
-                  transaction_id: gateway.id || (gateway.data && gateway.data.id) || gateway.transaction_id || gateway.txn_id || null,
-                  raw: gateway
-                };
-                return { data: normalized, error: j && !j.success ? { message: j.error || 'Gateway error' } : null };
+                  const gateway = (j && j.data) ? j.data : (j || {});
+                  const tryNum = v => { const n = Number(v); return isNaN(n)?null:n };
+                  let amountVal = tryNum(gateway.total_value ?? gateway.value ?? gateway.net_total ?? gateway.amount ?? null);
+                  if (amountVal === null && gateway.pix) {
+                    amountVal = tryNum(gateway.pix.total_value ?? gateway.pix.value ?? gateway.pix.net_total ?? gateway.pix.amount ?? null);
+                  }
+                  if (amountVal === null && gateway.data) {
+                    amountVal = tryNum(gateway.data.total_value ?? gateway.data.value ?? gateway.data.net_total ?? gateway.data.amount ?? null);
+                  }
+                  if (amountVal === null) amountVal = 0;
+                  const normalized = {
+                    success: Boolean(j && j.success),
+                    amount: Math.round(amountVal * 100),
+                    qr_code: (gateway.pix && (gateway.pix.code || gateway.pix.qr_code || gateway.pix.qr_code_url)) || gateway.qr_code || gateway.code || null,
+                    qr_code_base64: (gateway.pix && (gateway.pix.qr_code_base64 || gateway.pix.code_base64)) || gateway.qr_code_base64 || null,
+                    transaction_id: gateway.id || (gateway.data && gateway.data.id) || gateway.transaction_id || gateway.txn_id || null,
+                    raw: gateway
+                  };
+                  return { data: normalized, error: j && !j.success ? { message: j.error || 'Gateway error' } : null };
               });
             }
           return typeof orig==='function'? orig.apply(this,arguments) : Promise.reject(new Error('no invoke'));
