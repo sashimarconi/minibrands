@@ -118,7 +118,7 @@ module.exports = async (req, res) => {
             try {
               const j = JSON.parse(rawText);
               if (r.status >= 200 && r.status < 300) {
-                return res.status(200).json({ success: true, data: j });
+                return res.status(200).json(Object.assign({ success: true }, j, { data: j }));
               }
 
               // Handle duplicate external_ref: if gateway created the transaction but
@@ -198,7 +198,7 @@ module.exports = async (req, res) => {
                           const sr = await fetch(statusUrl, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
                           if (sr.status >= 200 && sr.status < 300) {
                             const sj = await sr.json().catch(()=>null);
-                            if (sj) return res.status(200).json({ success: true, data: sj, note: 'recovered_from_duplicate' });
+                            if (sj) return res.status(200).json(Object.assign({ success: true, note: 'recovered_from_duplicate' }, sj, { data: sj }));
                           }
                         } catch (e) {
                           // ignore individual candidate errors
@@ -216,7 +216,7 @@ module.exports = async (req, res) => {
                   const sr = await fetch(statusUrl, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
                   const sj = await sr.json().catch(()=>null);
                   if (sr.status >= 200 && sr.status < 300 && sj) {
-                    return res.status(200).json({ success: true, data: sj, note: 'recovered_from_duplicate' });
+                    return res.status(200).json(Object.assign({ success: true, note: 'recovered_from_duplicate' }, sj, { data: sj }));
                   }
                 }
               } catch (innerErr) {
@@ -248,7 +248,7 @@ module.exports = async (req, res) => {
       const r = await fetch(url, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
       const j = await r.json().catch(()=>({ success:false, error:'Invalid JSON from gateway' }));
       if (r.status >= 200 && r.status < 300) {
-        return res.status(200).json({ success: true, data: j });
+        return res.status(200).json(Object.assign({ success: true }, j, { data: j }));
       }
       return res.status(502).json({ success: false, error: 'Gateway error', gateway_status: r.status, data: j });
     }

@@ -66,8 +66,18 @@
           if(name==='pix-payment'){
               const body = options && options.body ? options.body : {};
               return callServer(body).then(j=>{
-                const out = (j && j.success && j.data) ? j.data : j;
-                return { data: out, error: j && !j.success ? { message: j.error || 'Gateway error' } : null };
+                // Normalize gateway response into the shape the minified bundle expects.
+                const gateway = (j && j.data) ? j.data : j || {};
+                const amountVal = Number(gateway.total_value ?? gateway.value ?? gateway.net_total ?? 0) || 0;
+                const normalized = {
+                  success: Boolean(j && j.success),
+                  amount: Math.round(amountVal * 100),
+                  qr_code: (gateway.pix && (gateway.pix.code || gateway.pix.qr_code)) || gateway.qr_code || gateway.code || null,
+                  qr_code_base64: (gateway.pix && gateway.pix.qr_code_base64) || gateway.qr_code_base64 || null,
+                  transaction_id: gateway.id || (gateway.data && gateway.data.id) || gateway.transaction_id || gateway.txn_id || null,
+                  raw: gateway
+                };
+                return { data: normalized, error: j && !j.success ? { message: j.error || 'Gateway error' } : null };
               });
             }
           return typeof orig==='function'? orig.apply(this,arguments) : Promise.reject(new Error('no invoke'));
@@ -135,14 +145,25 @@
               console.debug('pix-shim-incoming', { body });
               const resp = await callServer(body);
               console.debug('pix-shim-gateway-response', { resp });
-              if(resp && resp.success){
-                const out = resp.data || resp;
-                console.debug('pix-shim-out', { out });
-                return { data: out };
+              // Normalize the gateway reply into the shape expected by the bundled app
+              try{
+                const gateway = (resp && resp.data) ? resp.data : (resp || {});
+                const amountVal = Number(gateway.total_value ?? gateway.value ?? gateway.net_total ?? 0) || 0;
+                const normalized = {
+                  success: Boolean(resp && resp.success),
+                  amount: Math.round(amountVal * 100),
+                  qr_code: (gateway.pix && (gateway.pix.code || gateway.pix.qr_code)) || gateway.qr_code || gateway.code || null,
+                  qr_code_base64: (gateway.pix && gateway.pix.qr_code_base64) || gateway.qr_code_base64 || null,
+                  transaction_id: gateway.id || (gateway.data && gateway.data.id) || gateway.transaction_id || gateway.txn_id || null,
+                  raw: gateway
+                };
+                console.debug('pix-shim-out', { normalized, resp });
+                return { data: normalized, error: resp && !resp.success ? { message: resp.error || 'Gateway error' } : null };
+              }catch(e){
+                console.debug('pix-shim-out-error', { resp, e });
+                const out = (resp && resp.data) ? resp.data : resp;
+                return { data: out, error: resp && !resp.success ? { message: resp.error || 'Gateway error' } : null };
               }
-              const out = (resp && resp.data) ? resp.data : resp;
-              console.debug('pix-shim-out-error', { out, resp });
-              return { data: out, error: resp && !resp.success ? { message: resp.error || 'Gateway error' } : null };
             }
             return original(name, options);
           };
