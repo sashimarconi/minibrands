@@ -3,12 +3,12 @@ const fetch = globalThis.fetch || require('node-fetch');
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
 
-  const GHOST_SECRET = process.env.GHOSTSPAYS_SECRET_KEY;
-  const GHOST_PUBLIC = process.env.GHOSTSPAYS_PUBLIC_KEY;
-  const GATEWAY_ACCOUNT_ID = process.env.GHOSTSPAYS_GATEWAY_ACCOUNT_ID || 1;
+  const SPEED_PUBLIC = process.env.SPEEDPAG_PUBLIC_KEY || process.env.SPEEDPAG_KEY || process.env.SPEEDPAG_PUBLIC;
+  const SPEED_SECRET = process.env.SPEEDPAG_SECRET_KEY || process.env.SPEEDPAG_SECRET;
+  const GATEWAY_ACCOUNT_ID = process.env.SPEEDPAG_GATEWAY_ACCOUNT_ID || process.env.GHOSTSPAYS_GATEWAY_ACCOUNT_ID || 1;
 
-  if (!GHOST_SECRET || !GHOST_PUBLIC) {
-    return res.status(500).json({ success: false, error: 'Gateway keys not configured (set GHOSTSPAYS_SECRET_KEY and GHOSTSPAYS_PUBLIC_KEY)' });
+  if (!SPEED_SECRET || !SPEED_PUBLIC) {
+    return res.status(500).json({ success: false, error: 'Gateway keys not configured (set SPEEDPAG_PUBLIC_KEY and SPEEDPAG_SECRET_KEY)' });
   }
 
   let body = req.body;
@@ -88,181 +88,49 @@ module.exports = async (req, res) => {
         if (mapped.length) payload.products = mapped;
       }
 
-      const GHOSTSPAYS_API_URL = (process.env.GHOSTSPAYS_API_URL || 'https://api.ghostspaysv1.com').replace(/\/$/, '');
+      const SPEED_API_URL = (process.env.SPEEDPAG_API_URL || 'https://api.speedpag.com/v1').replace(/\/$/, '');
 
-      const pathCandidates = ['/api/pix/generate-transaction', '/api/generate-transaction'];
-      const headerVariants = [
-        { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC },
-        { 'secret_key': GHOST_SECRET, 'api_key': GHOST_PUBLIC },
-        { 'api_key': GHOST_PUBLIC, 'secret_key': GHOST_SECRET }
-      ];
+      // Build Basic auth header according to SpeedPag docs (public:secret)
+      const auth = 'Basic ' + Buffer.from(`${SPEED_PUBLIC}:${SPEED_SECRET}`).toString('base64');
+      const endpoint = `${SPEED_API_URL}/transactions`;
+      console.log('SpeedPag try', { endpoint });
 
-      const attempts = [];
-      let lastResponseText = '';
-      for (const path of pathCandidates) {
-        for (const headers of headerVariants) {
-          const endpoint = `${GHOSTSPAYS_API_URL}${path}`;
-          console.log('GhostsPay try', { endpoint, headerNames: Object.keys(headers) });
-            try {
-            const r = await fetch(endpoint, {
-              method: 'POST',
-              headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
-              body: JSON.stringify(payload)
-            });
+      try {
+        const r = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': auth
+          },
+          body: JSON.stringify(Object.assign({}, payload, { paymentMethod: 'pix', amount: Math.round(Number(payload.value) * 100) }))
+        });
 
-            let rawText = '';
-            try { rawText = await r.text(); } catch (e) { rawText = String(e); }
-            lastResponseText = rawText;
-              console.log('GhostsPay post response preview (truncated):', rawText && rawText.slice ? rawText.slice(0,2000) : rawText);
+        const j = await r.json().catch(async () => {
+          const txt = await r.text().catch(()=>null);
+          throw new Error('Invalid JSON from SpeedPag: ' + (txt ? txt.slice(0,1000) : 'no body'));
+        });
 
-            // Try parse
-            try {
-              const j = JSON.parse(rawText);
-              if (r.status >= 200 && r.status < 300) {
-                return res.status(200).json(Object.assign({ success: true }, j, { data: j }));
-              }
-
-                // Handle duplicate external_ref: if gateway created the transaction but
-              // internal DB raised duplicate key, GhostsPay may return 500 but include
-              // the created transaction id inside the response payload (j.data.id).
-              // In that case, fetch the transaction by id and return it as success.
-              try {
-                let innerId = null;
-                // direct paths
-                if (j && j.data && (j.data.id || (j.data.data && j.data.data.id))) {
-                  innerId = j.data.id || (j.data.data && j.data.data.id);
-                }
-                // search JSON string for an UUID if not found
-                if (!innerId) {
-                  try {
-                    const hay = JSON.stringify(j || {}) + ' ' + (rawText || '');
-                    // try direct id field first
-                    const m1 = hay.match(/\"id\"\s*:\s*\"([0-9a-fA-F-]{36})\"/);
-                    if (m1) innerId = m1[1];
-
-                    // If still not found, try to extract an embedded JSON blob (e.g. '{"success":true,...}')
-                    if (!innerId) {
-                      const extractJSON = (s) => {
-                        if (!s || typeof s !== 'string') return null;
-                        const keyCandidates = ['"success"', '"message"', '"data"'];
-                        let keyIdx = -1;
-                        for (const k of keyCandidates) {
-                          keyIdx = s.indexOf(k);
-                          if (keyIdx !== -1) break;
-                        }
-                        if (keyIdx === -1) return null;
-                        // find opening brace before the key
-                        const openIdx = s.lastIndexOf('{', keyIdx);
-                        if (openIdx === -1) return null;
-                        // scan forward to find matching closing brace
-                        let depth = 0;
-                        for (let i = openIdx; i < s.length; i++) {
-                          if (s[i] === '{') depth++;
-                          else if (s[i] === '}') {
-                            depth--;
-                            if (depth === 0) {
-                              let candidate = s.slice(openIdx, i + 1);
-                              // try parsing candidate directly
-                              try { return JSON.parse(candidate); } catch (e) {}
-                              // try removing escaped quotes (\")
-                              try {
-                                const unescaped = candidate.replace(/\\\"/g,'"').replace(/\\n/g,'');
-                                return JSON.parse(unescaped);
-                              } catch (e) {}
-                              // try removing backslashes entirely
-                              try {
-                                const stripped = candidate.replace(/\\/g,'');
-                                return JSON.parse(stripped);
-                              } catch (e) {}
-                              return null;
-                            }
-                          }
-                        }
-                        return null;
-                      };
-
-                      const parsedInner = extractJSON(hay) || extractJSON(rawText || '');
-                      if (parsedInner) {
-                        const maybeId = (parsedInner && parsedInner.data && (parsedInner.data.id || (parsedInner.data.data && parsedInner.data.data.id))) || (parsedInner && parsedInner.id);
-                        if (maybeId) innerId = maybeId;
-                      }
-                    }
-
-                    // if still not found, collect all UUID-like candidates and try them
-                    if (!innerId) {
-                      const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-                      const found = hay.match(uuidRe) || [];
-                      const uniques = [...new Set(found)];
-                      for (const cand of uniques) {
-                        try {
-                          const statusUrl = `${GHOSTSPAYS_API_URL}/api/transaction/${encodeURIComponent(cand)}`;
-                          const sr = await fetch(statusUrl, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
-                          if (sr.status >= 200 && sr.status < 300) {
-                            const sj = await sr.json().catch(()=>null);
-                            if (sj) return res.status(200).json(Object.assign({ success: true, note: 'recovered_from_duplicate' }, sj, { data: sj }));
-                          }
-                        } catch (e) {
-                          // ignore individual candidate errors
-                        }
-                      }
-                    }
-                  } catch (e) {
-                    // ignore
-                  }
-                }
-
-                if (innerId) {
-                  console.log('Detected duplicate external_ref, attempting to fetch existing transaction', innerId);
-                  // Try multiple possible status endpoints in case the gateway uses
-                  // a slightly different path (transactions vs transaction, status suffix, or query).
-                  const altPaths = [
-                    `/api/transaction/${encodeURIComponent(innerId)}`,
-                    `/api/transactions/${encodeURIComponent(innerId)}`,
-                    `/api/transaction/${encodeURIComponent(innerId)}/status`,
-                    `/api/transaction?external_ref=${encodeURIComponent(innerId)}`
-                  ];
-                  for (const p of altPaths) {
-                    try {
-                      const statusUrl = `${GHOSTSPAYS_API_URL}${p}`;
-                      console.log('GhostsPay status check', { url: statusUrl, tx: innerId });
-                      const sr = await fetch(statusUrl, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
-                      const sj = await sr.json().catch(()=>null);
-                      console.log('GhostsPay status check result', { path: p, status: sr && sr.status, preview: sj && typeof sj === 'object' ? JSON.stringify(sj).slice(0,2000) : String(sj) });
-                      if (sr.status >= 200 && sr.status < 300 && sj) {
-                        return res.status(200).json(Object.assign({ success: true, note: 'recovered_from_duplicate' }, sj, { data: sj }));
-                      }
-                    } catch (e) {
-                      console.warn('Error while checking alternative status path', p, e && e.message ? e.message : e);
-                    }
-                  }
-                }
-              } catch (innerErr) {
-                console.error('Error while recovering transaction after duplicate', innerErr);
-              }
-
-              return res.status(502).json({ success: false, error: 'Gateway error', gateway_status: r.status, data: j });
-            } catch (e) {
-              attempts.push({ endpoint, headerNames: Object.keys(headers), status: r.status, body_preview: rawText && rawText.length>1000 ? rawText.slice(0,1000) + '...[truncated]' : rawText });
-              // continue trying other combos
-            }
-          } catch (err) {
-            attempts.push({ endpoint, headerNames: Object.keys(headers), error: String(err) });
-          }
+        if (r.status >= 200 && r.status < 300) {
+          // Normalize: return top-level fields and also under `data` for compatibility
+          return res.status(200).json(Object.assign({ success: true }, j, { data: j }));
         }
-      }
 
-      console.error('GhostsPay all attempts failed', { attempts });
-      // Return last text preview plus the attempts to aid debugging (no secret values)
-      return res.status(502).json({ success: false, error: 'Invalid JSON from gateway', gateway_status: attempts.length ? (attempts[attempts.length-1].status||0) : 0, gateway_body_preview: lastResponseText && lastResponseText.length>1000 ? lastResponseText.slice(0,1000) + '...[truncated]' : lastResponseText, attempts });
+        // Non-2xx: bubble gateway response for debugging
+        return res.status(502).json({ success: false, error: 'Gateway error', gateway_status: r.status, data: j });
+      } catch (e) {
+        console.error('SpeedPag request failed', String(e));
+        return res.status(502).json({ success: false, error: String(e) });
+      }
     }
 
     if (action === 'check_status') {
       const tx = body.transaction_id || body.id || body.txn_id;
       if (!tx) return res.status(400).json({ success: false, error: 'transaction_id required' });
-      const GHOSTSPAYS_API_URL = (process.env.GHOSTSPAYS_API_URL || 'https://api.ghostspaysv1.com').replace(/\/$/, '');
-      const url = `${GHOSTSPAYS_API_URL}/api/transaction/${encodeURIComponent(tx)}`;
-      console.log('GhostsPay status check', { url, tx });
-      const r = await fetch(url, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
+      const SPEED_API_URL = (process.env.SPEEDPAG_API_URL || 'https://api.speedpag.com/v1').replace(/\/$/, '');
+      const auth = 'Basic ' + Buffer.from(`${SPEED_PUBLIC}:${SPEED_SECRET}`).toString('base64');
+      const url = `${SPEED_API_URL}/transactions/${encodeURIComponent(tx)}`;
+      console.log('SpeedPag status check', { url, tx });
+      const r = await fetch(url, { headers: { 'Authorization': auth, 'Content-Type': 'application/json' } });
       const j = await r.json().catch(()=>({ success:false, error:'Invalid JSON from gateway' }));
       if (r.status >= 200 && r.status < 300) {
         return res.status(200).json(Object.assign({ success: true }, j, { data: j }));
