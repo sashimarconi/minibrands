@@ -185,7 +185,7 @@
       // if it already contains the bucket host, ensure leading slash
       if(url.indexOf(bucket) !== -1) return '/' + url.replace(/^\.\.?\//, '');
       // If the value looks like a bare filename (e.g. id-preview-*.png), prepend bucketBasePath
-      if(/(^|\\/)id-preview-[^\\/\\s]+\.(png|jpe?g|webp|gif)$/i.test(url)){
+      if(/id-preview-[^\/\s]+\.(png|jpe?g|webp|gif)$/i.test(url)){
         return bucketBasePath + url.replace(/^\.\.?\//, '');
       }
       return url;
