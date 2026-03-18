@@ -103,7 +103,7 @@ module.exports = async (req, res) => {
         for (const headers of headerVariants) {
           const endpoint = `${GHOSTSPAYS_API_URL}${path}`;
           console.log('GhostsPay try', { endpoint, headerNames: Object.keys(headers) });
-          try {
+            try {
             const r = await fetch(endpoint, {
               method: 'POST',
               headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
@@ -113,6 +113,7 @@ module.exports = async (req, res) => {
             let rawText = '';
             try { rawText = await r.text(); } catch (e) { rawText = String(e); }
             lastResponseText = rawText;
+              console.log('GhostsPay post response preview (truncated):', rawText && rawText.slice ? rawText.slice(0,2000) : rawText);
 
             // Try parse
             try {
@@ -121,7 +122,7 @@ module.exports = async (req, res) => {
                 return res.status(200).json(Object.assign({ success: true }, j, { data: j }));
               }
 
-              // Handle duplicate external_ref: if gateway created the transaction but
+                // Handle duplicate external_ref: if gateway created the transaction but
               // internal DB raised duplicate key, GhostsPay may return 500 but include
               // the created transaction id inside the response payload (j.data.id).
               // In that case, fetch the transaction by id and return it as success.
@@ -211,12 +212,28 @@ module.exports = async (req, res) => {
                 }
 
                 if (innerId) {
-                  console.log('Detected duplicate external_ref, fetching existing transaction', innerId);
-                  const statusUrl = `${GHOSTSPAYS_API_URL}/api/transaction/${encodeURIComponent(innerId)}`;
-                  const sr = await fetch(statusUrl, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
-                  const sj = await sr.json().catch(()=>null);
-                  if (sr.status >= 200 && sr.status < 300 && sj) {
-                    return res.status(200).json(Object.assign({ success: true, note: 'recovered_from_duplicate' }, sj, { data: sj }));
+                  console.log('Detected duplicate external_ref, attempting to fetch existing transaction', innerId);
+                  // Try multiple possible status endpoints in case the gateway uses
+                  // a slightly different path (transactions vs transaction, status suffix, or query).
+                  const altPaths = [
+                    `/api/transaction/${encodeURIComponent(innerId)}`,
+                    `/api/transactions/${encodeURIComponent(innerId)}`,
+                    `/api/transaction/${encodeURIComponent(innerId)}/status`,
+                    `/api/transaction?external_ref=${encodeURIComponent(innerId)}`
+                  ];
+                  for (const p of altPaths) {
+                    try {
+                      const statusUrl = `${GHOSTSPAYS_API_URL}${p}`;
+                      console.log('GhostsPay status check', { url: statusUrl, tx: innerId });
+                      const sr = await fetch(statusUrl, { headers: { 'X-Secret-Key': GHOST_SECRET, 'X-Public-Key': GHOST_PUBLIC } });
+                      const sj = await sr.json().catch(()=>null);
+                      console.log('GhostsPay status check result', { path: p, status: sr && sr.status, preview: sj && typeof sj === 'object' ? JSON.stringify(sj).slice(0,2000) : String(sj) });
+                      if (sr.status >= 200 && sr.status < 300 && sj) {
+                        return res.status(200).json(Object.assign({ success: true, note: 'recovered_from_duplicate' }, sj, { data: sj }));
+                      }
+                    } catch (e) {
+                      console.warn('Error while checking alternative status path', p, e && e.message ? e.message : e);
+                    }
                   }
                 }
               } catch (innerErr) {
