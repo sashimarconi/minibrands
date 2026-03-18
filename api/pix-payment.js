@@ -139,8 +139,28 @@ module.exports = async (req, res) => {
         });
 
         if (r.status >= 200 && r.status < 300) {
-          // Normalize: return top-level fields and also under `data` for compatibility
-          return res.status(200).json(Object.assign({ success: true }, j, { data: j }));
+          // Normalize fields the frontend expects (transaction_id, amount in cents, qr_code)
+          const normalized = { success: true };
+          normalized.transaction_id = j.secureId || j.id || j.transactionId || j.paymentId || (j.data && (j.data.id || j.data.transaction_id));
+          normalized.amount = j.amount || j.total || j.total_value || j.totalValue || j.basePrice || j.value;
+          // attempt to extract QR payload from common locations
+          let qr = null;
+          if (j.pix && typeof j.pix === 'object') {
+            qr = j.pix.code || j.pix.payload || j.pix.qr || j.pix.qr_code || j.pix.qrCode || j.pix.qr_code_url || j.pix.qr_code_image || null;
+          }
+          if (!qr) qr = j.qr || j.qrCode || j.qr_code || j.payload || null;
+          if (!qr) {
+            try {
+              const hay = JSON.stringify(j || {});
+              const m = hay.match(/(000201[0-9A-Za-z\-_.:,;=*()%@!+\\/\\\\]*)/);
+              if (m) qr = m[1];
+            } catch (e) {}
+          }
+          if (qr) normalized.qr_code = qr;
+          // also expose a raw copy and include original data for debugging
+          normalized.raw = j;
+          normalized.data = j;
+          return res.status(200).json(normalized);
         }
 
         // Non-2xx: bubble gateway response for debugging
