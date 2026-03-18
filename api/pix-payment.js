@@ -99,15 +99,19 @@ module.exports = async (req, res) => {
         // Build SpeedPag-specific payload: amount in cents, paymentMethod, items[], customer{}
         const amountCents = Math.round(Number(payload.value || 0) * 100);
         const items = (Array.isArray(payload.products) && payload.products.length) ? payload.products.map(it => ({
-          name: it.product_name || it.name || 'Product',
+          title: it.product_name || it.name || 'Product',
           quantity: Number(it.quantity) || 1,
-          unit_price: Math.round(Number(it.value || it.price || 0) * 100)
-        })) : [{ name: payload.external_ref || 'Item', quantity: 1, unit_price: amountCents }];
+          unitPrice: Math.round(Number(it.value || it.price || 0) * 100),
+          tangible: !!(it.tangible || it.physical || false)
+        })) : [{ title: payload.external_ref || 'Item', quantity: 1, unitPrice: amountCents, tangible: false }];
 
+        // SpeedPag expects `customer.document` as an object. Guessing shape: { type, number }
+        const docRaw = (payload.client_document || payload.document || '').toString().replace(/\D+/g, '');
+        const docType = (docRaw && docRaw.length === 11) ? 'cpf' : (docRaw && docRaw.length === 14 ? 'cnpj' : 'other');
         const customer = {
           name: payload.client_name || payload.client || '',
           email: payload.client_email || payload.email || '',
-          document: payload.client_document || payload.document || '',
+          document: docRaw ? { type: docType, number: docRaw } : undefined,
           phone: payload.client_mobile_phone || payload.client_phone || payload.client_mobile || ''
         };
 
